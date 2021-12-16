@@ -33,7 +33,7 @@
 
 ## Check for the existence of the "Exclude from CA" security group, and create the group if it does not exist
 
-$ExcludeCAGroupName = "sg-Exclude From CA"
+$ExcludeCAGroupName = "CA-Exclude From CA"
 $ExcludeCAGroup = Get-AzureADGroup -All $true | Where-Object DisplayName -eq $ExcludeCAGroupName
 
 if ($ExcludeCAGroup -eq $null -or $ExcludeCAGroup -eq "") {
@@ -45,6 +45,22 @@ else {
 }
 
 ########################################################
+
+## Check for the existence of the "Exclude From MFA" security group, and create the group if it does not exist
+
+$ExcludeMFAGroupName = "CA-Exclude From MFA"
+$ExcludeMFAGroup = Get-AzureADGroup -All $true | Where-Object DisplayName -eq $ExcludeMFAGroupName
+
+if ($ExcludeMFAGroup -eq $null -or $ExcludeMFAGroup -eq "") {
+    New-AzureADGroup -DisplayName $ExcludeMFAGroupName -SecurityEnabled $true -MailEnabled $false -MailNickName sg-ExcludeFromMFA
+    $ExcludeMFAGroup = Get-AzureADGroup -All $true | Where-Object DisplayName -eq $ExcludeMFAGroupName
+}
+else {
+    Write-Host "Exclude from MFA group already exists"
+}
+
+########################################################
+
 
 ## This policy blocks legacy authentication for all users
 
@@ -84,15 +100,19 @@ New-AzureADMSConditionalAccessPolicy -DisplayName "[All cloud apps] GRANT: Requi
 
 $conditions = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessConditionSet
 $conditions.Applications = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessApplicationCondition
-$conditions.Applications.IncludeApplications = "All"
+$conditions.Applications.IncludeApplications = "ALL"
+$conditions.Applications.ExcludeApplications = "0000000a-0000-0000-c000-000000000000","d4ebce55-015a-49b5-a083-c84d1797ae8c"
 $conditions.Users = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessUserCondition
 $conditions.Users.IncludeUsers = "All"
-$conditions.Users.ExcludeUsers = "GuestsOrExternalUsers"
-$conditions.Users.ExcludeGroups = $ExcludeCAGroup.ObjectId
-$conditions.ClientAppTypes = @('Browser', 'MobileAppsAndDesktopClients')
+$conditions.Users.ExcludeGroups = $ExcludeCAGroup.ObjectID,$ExcludeMFAGroup.ObjectId
+$conditions.Platforms = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessPlatformCondition
+$conditions.Platforms.IncludePlatforms = "ALL"
+$conditions.Locations = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessLocationCondition
+$conditions.Locations.IncludeLocations = "ALL"
+$conditions.Locations.ExcludeLocations = "AllTrusted"
 $controls = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessGrantControls
 $controls._Operator = "OR"
-$controls.BuiltInControls = "MFA"
+$controls.BuiltInControls = "mfa"
 
 New-AzureADMSConditionalAccessPolicy -DisplayName "[All cloud apps] GRANT: Require MFA for All users" -State "Disabled" -Conditions $conditions -GrantControls $controls 
 
